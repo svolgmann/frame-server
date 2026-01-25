@@ -58,3 +58,27 @@ python3 updater.py \
 
 
 python3 updater.py --base-url http://...:80 --version 2 --interval-sec 1800 --rotate-deg 90   --enhance --enhance-contrast 1.2 --enhance-color 1.1 --enhance-brightness 1.05 --enhance-sharpness 1.15 --enhance-gamma 1.08 --scan-interval-sec 0 --smb-share //.../Ordner --smb-direct --smb-user USER --smb-pass PASS  --smb-domain WORKGROUP --reset-index
+
+
+docker run --rm \
+  -p 80:80 \
+  -v "$PWD/previews:/app/previews" \
+  ghcr.io/svolgmann/frame-server:sha-b38581e \
+  --base-url http://IP:80 \
+  --version 2 \
+  --interval-sec 1800 \
+  --debug-preview-dir previews \
+  --rotate-deg 90 \
+  --enhance \
+  --enhance-contrast 1.2 \
+  --enhance-color 1.1 \
+  --enhance-brightness 1.05 \
+  --enhance-sharpness 1.15 \
+  --enhance-gamma 1.08 \
+  --scan-interval-sec 0 \
+  --smb-share //PFAD/ORDNER \
+  --smb-direct \
+  --smb-user USER \
+  --smb-pass PASS \
+  --smb-domain WORKGROUP \
+  --reset-index
