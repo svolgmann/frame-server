@@ -55,3 +55,6 @@ python3 updater.py \
   --scan-interval-sec 0 \
   --reset-index
 ```
+
+
+python3 updater.py --base-url http://...:80 --version 2 --interval-sec 1800 --rotate-deg 90   --enhance --enhance-contrast 1.2 --enhance-color 1.1 --enhance-brightness 1.05 --enhance-sharpness 1.15 --enhance-gamma 1.08 --scan-interval-sec 0 --smb-share //.../Ordner --smb-direct --smb-user USER --smb-pass PASS  --smb-domain WORKGROUP --reset-index
