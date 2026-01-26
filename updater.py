@@ -316,6 +316,13 @@ class Handler(BaseHTTPRequestHandler):
                 ]
                 parts = [f"{k}={payload.get(k)}" for k in fields]
                 print("[debug] heartbeat payload: " + ", ".join(parts))
+                current_index = payload.get("current_index")
+                next_index = payload.get("next_index")
+                if current_index is not None or next_index is not None:
+                    try:
+                        self.server.precompute_by_indices(current_index, next_index)
+                    except Exception as exc:
+                        print(f"[debug] heartbeat precompute failed: {exc}")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", "2")
@@ -516,6 +523,32 @@ class Server(HTTPServer):
             print(f"[debug] failed to precompute {next_name}: {exc}")
         keep = [n for n in [current_name, next_name] if n]
         self._prune_cache_keep(keep)
+
+    def precompute_by_indices(self, current_index, next_index):
+        images = self._refresh_image_list()
+        if not images:
+            print("[debug] no images to precompute")
+            self._prune_cache_keep([])
+            return
+        current_name = None
+        next_name = None
+        if isinstance(current_index, int) and 0 <= current_index < len(images):
+            current_name = images[current_index]
+        if isinstance(next_index, int) and 0 <= next_index < len(images):
+            next_name = images[next_index]
+        if not next_name and current_name:
+            next_name = self._next_image_name(current_name)
+        if not next_name:
+            return
+        print(f"[debug] precomputing next image: {next_name}")
+        try:
+            self.get_packed(next_name if self.smb_direct else os.path.join(self.images_dir, next_name))
+        except Exception as exc:
+            print(f"[debug] failed to precompute {next_name}: {exc}")
+        keep = [n for n in [current_name, next_name] if n]
+        self._prune_cache_keep(keep)
+        if current_name:
+            self._last_requested = current_name
 
     def start_image_watcher(self):
         if self.scan_interval_sec <= 0:
