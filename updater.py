@@ -202,8 +202,7 @@ def list_images(images_dir):
     for name in sorted(os.listdir(images_dir)):
         if name.lower().endswith((".jpg", ".jpeg")):
             out.append(name)
-    return out[:8]  # Firmware kann max. 8 URLs
-    # (siehe version_info_t.image_urls[8])
+    return out
 
 def _parse_smb_share(share):
     if share.startswith("smb://"):
@@ -460,7 +459,7 @@ class Server(HTTPServer):
             if name.lower().endswith((".jpg", ".jpeg")):
                 out.append(name)
                 mtimes[name] = entry.last_write_time
-        out = sorted(out)[:8]
+        out = sorted(out)
         self._smb_mtime = {k: mtimes[k] for k in out}
         return out
 
