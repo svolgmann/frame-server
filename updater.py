@@ -291,6 +291,31 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         print(f"[debug] incoming POST {parsed.path} from {self.client_address[0]}")
         if parsed.path == "/heartbeat":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b""
+            try:
+                payload = json.loads(raw.decode("utf-8")) if raw else {}
+            except (ValueError, UnicodeDecodeError):
+                self.send_response(400)
+                self.end_headers()
+                elapsed_ms = (time.time() - start_time) * 1000.0
+                print(f"[debug] heartbeat invalid JSON after {elapsed_ms:.1f} ms")
+                return
+            self.server.last_heartbeat = payload
+            self.server.last_heartbeat_at = time.time()
+            if payload:
+                fields = [
+                    "version",
+                    "interval_sec",
+                    "heartbeat_interval_sec",
+                    "image_count",
+                    "current_index",
+                    "next_index",
+                    "current_url",
+                    "next_url",
+                ]
+                parts = [f"{k}={payload.get(k)}" for k in fields]
+                print("[debug] heartbeat payload: " + ", ".join(parts))
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", "2")
@@ -341,6 +366,8 @@ class Server(HTTPServer):
         self._cache = {}
         self._last_requested = None
         self._image_list = []
+        self.last_heartbeat = None
+        self.last_heartbeat_at = None
         self._smb_conn = None
         self._smb_server = None
         self._smb_share_name = None
