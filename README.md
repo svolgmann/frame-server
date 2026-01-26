@@ -35,6 +35,7 @@ python3 updater.py \
 - `--enhance` + `--enhance-*`: Vorverarbeitung fuer Spectra-6 (Kontrast/Gamma/etc).
 - `--scan-interval-sec`: Hintergrund-Scan fuer das Vorrechnen (0 = aus).
 - `--reset-index`: setzt in der ersten `version.json` einmalig `reset_index=true`.
+- `--heartbeat-interval-sec`: schreibt `heartbeat_interval_sec` in `version.json` (0 = aus).
 - `--smb-direct`: SMB-Share direkt lesen (kein Mount).
 
 ## Beispiel (unten)
@@ -52,6 +53,7 @@ python3 updater.py \
   --enhance-brightness 1.05 \
   --enhance-sharpness 1.15 \
   --enhance-gamma 1.08 \
+  --heartbeat-interval-sec 60 \
   --scan-interval-sec 0 \
   --reset-index
 ```
