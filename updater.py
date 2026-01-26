@@ -240,6 +240,7 @@ class Handler(BaseHTTPRequestHandler):
                     "current_version": self.server.version,
                     "image_change_interval_sec": self.server.interval_sec,
                     "reset_index": reset_index,
+                    "heartbeat_interval_sec": self.server.heartbeat_interval_sec,
                 },
                 "images": [{"url": f"{self.server.base_url}/images/{n}"} for n in images],
             }
@@ -285,16 +286,36 @@ class Handler(BaseHTTPRequestHandler):
         elapsed_ms = (time.time() - start_time) * 1000.0
         print(f"[debug] 404 for {parsed.path} after {elapsed_ms:.1f} ms")
 
+    def do_POST(self):
+        start_time = time.time()
+        parsed = urlparse(self.path)
+        print(f"[debug] incoming POST {parsed.path} from {self.client_address[0]}")
+        if parsed.path == "/heartbeat":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            elapsed_ms = (time.time() - start_time) * 1000.0
+            print(f"[debug] heartbeat OK in {elapsed_ms:.1f} ms")
+            return
+
+        self.send_response(404)
+        self.end_headers()
+        elapsed_ms = (time.time() - start_time) * 1000.0
+        print(f"[debug] 404 for {parsed.path} after {elapsed_ms:.1f} ms")
+
 class Server(HTTPServer):
-    def __init__(self, addr, handler, images_dir, base_url, version, interval_sec, dither_method, dither_strength,
-                 rotate_deg, enhance, contrast, color, brightness, sharpness, gamma, debug_preview_dir,
-                 scan_interval_sec, smb_direct, smb_share, smb_user, smb_pass, smb_domain, smb_guest, smb_dir,
-                 reset_index):
+    def __init__(self, addr, handler, images_dir, base_url, version, interval_sec, heartbeat_interval_sec,
+                 dither_method, dither_strength, rotate_deg, enhance, contrast, color, brightness, sharpness, gamma,
+                 debug_preview_dir, scan_interval_sec, smb_direct, smb_share, smb_user, smb_pass, smb_domain,
+                 smb_guest, smb_dir, reset_index):
         super().__init__(addr, handler)
         self.images_dir = images_dir
         self.base_url = base_url.rstrip("/")
         self.version = version
         self.interval_sec = interval_sec
+        self.heartbeat_interval_sec = heartbeat_interval_sec
         self.dither_method = dither_method
         self.dither_strength = dither_strength
         self.rotate_deg = rotate_deg
@@ -603,6 +624,8 @@ def main():
     parser.add_argument("--images-dir", default="images")
     parser.add_argument("--version", type=int, default=1)
     parser.add_argument("--interval-sec", type=int, default=30)
+    parser.add_argument("--heartbeat-interval-sec", type=int, default=0,
+                        help="include heartbeat_interval_sec in version.json (0 disables)")
     parser.add_argument("--dither", choices=["none", "floyd"], default="floyd")
     parser.add_argument("--dither-strength", type=float, default=1.0)
     parser.add_argument("--rotate-deg", type=int, default=0,
@@ -684,7 +707,7 @@ def main():
         raise SystemExit(f"images dir not found: {args.images_dir}")
 
     httpd = Server((args.host, args.port), Handler,
-                   args.images_dir, args.base_url, args.version, args.interval_sec,
+                   args.images_dir, args.base_url, args.version, args.interval_sec, args.heartbeat_interval_sec,
                    args.dither, args.dither_strength, args.rotate_deg,
                    args.enhance, args.enhance_contrast, args.enhance_color, args.enhance_brightness,
                    args.enhance_sharpness, args.enhance_gamma, args.debug_preview_dir,
