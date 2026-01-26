@@ -9,7 +9,7 @@ import platform
 import io
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from PIL import Image
 from PIL import ImageEnhance
@@ -204,6 +204,14 @@ def list_images(images_dir):
             out.append(name)
     return out
 
+def paginate_images(images, page: int, size: int):
+    if size <= 0:
+        return images
+    page = max(0, page)
+    start = page * size
+    end = start + size
+    return images[start:end]
+
 def _parse_smb_share(share):
     if share.startswith("smb://"):
         share = share[len("smb://"):]
@@ -226,14 +234,30 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         start_time = time.time()
         parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
         print(f"[debug] incoming GET {parsed.path} from {self.client_address[0]}")
         if parsed.path == "/version.json":
             print("[debug] building version.json response")
             images = self.server.list_images()
-            self.server._image_list = images
+            page = self.server.page_index
+            size = self.server.page_size
+            if "page" in params:
+                try:
+                    page = int(params["page"][0])
+                except (ValueError, TypeError):
+                    page = self.server.page_index
+            if "size" in params:
+                try:
+                    size = int(params["size"][0])
+                except (ValueError, TypeError):
+                    size = self.server.page_size
+            paged_images = paginate_images(images, page, size)
+            self.server._image_list = paged_images
             reset_index = bool(self.server.reset_index_once)
             if reset_index:
                 self.server.reset_index_once = False
+            total_images = len(images)
+            total_pages = (total_images + size - 1) // size if size > 0 else 1
             payload = {
                 "settings": {
                     "current_version": self.server.version,
@@ -241,7 +265,13 @@ class Handler(BaseHTTPRequestHandler):
                     "reset_index": reset_index,
                     "heartbeat_interval_sec": self.server.heartbeat_interval_sec,
                 },
-                "images": [{"url": f"{self.server.base_url}/images/{n}"} for n in images],
+                "paging": {
+                    "page": page,
+                    "size": size,
+                    "total_images": total_images,
+                    "total_pages": total_pages,
+                },
+                "images": [{"url": f"{self.server.base_url}/images/{n}"} for n in paged_images],
             }
             body = json.dumps(payload).encode("utf-8")
             self.send_response(200)
@@ -250,7 +280,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             elapsed_ms = (time.time() - start_time) * 1000.0
-            print(f"[debug] sent version.json ({len(body)} bytes, {len(images)} images) in {elapsed_ms:.1f} ms")
+            print(f"[debug] sent version.json ({len(body)} bytes, {len(paged_images)} images) in {elapsed_ms:.1f} ms")
             return
 
         if parsed.path.startswith("/images/"):
@@ -340,13 +370,15 @@ class Server(HTTPServer):
     def __init__(self, addr, handler, images_dir, base_url, version, interval_sec, heartbeat_interval_sec,
                  dither_method, dither_strength, rotate_deg, enhance, contrast, color, brightness, sharpness, gamma,
                  debug_preview_dir, scan_interval_sec, smb_direct, smb_share, smb_user, smb_pass, smb_domain,
-                 smb_guest, smb_dir, reset_index):
+                 smb_guest, smb_dir, reset_index, page_size, page_index):
         super().__init__(addr, handler)
         self.images_dir = images_dir
         self.base_url = base_url.rstrip("/")
         self.version = version
         self.interval_sec = interval_sec
         self.heartbeat_interval_sec = heartbeat_interval_sec
+        self.page_size = page_size
+        self.page_index = page_index
         self.dither_method = dither_method
         self.dither_strength = dither_strength
         self.rotate_deg = rotate_deg
@@ -685,6 +717,10 @@ def main():
     parser.add_argument("--interval-sec", type=int, default=30)
     parser.add_argument("--heartbeat-interval-sec", type=int, default=0,
                         help="include heartbeat_interval_sec in version.json (0 disables)")
+    parser.add_argument("--page-size", type=int, default=8,
+                        help="number of images per version.json page")
+    parser.add_argument("--page-index", type=int, default=0,
+                        help="default page index for version.json")
     parser.add_argument("--dither", choices=["none", "floyd"], default="floyd")
     parser.add_argument("--dither-strength", type=float, default=1.0)
     parser.add_argument("--rotate-deg", type=int, default=0,
@@ -772,7 +808,7 @@ def main():
                    args.enhance_sharpness, args.enhance_gamma, args.debug_preview_dir,
                    args.scan_interval_sec, args.smb_direct, args.smb_share, args.smb_user,
                    args.smb_pass, args.smb_domain, args.smb_guest, args.smb_dir,
-                   args.reset_index)
+                   args.reset_index, args.page_size, args.page_index)
     httpd.precompute_next_image(None)
     httpd.start_image_watcher()
     print(
