@@ -180,10 +180,13 @@ def _enhance_for_spectra6(img: Image.Image, contrast: float, color: float, brigh
     return img
 
 def jpeg_to_packed(path, dither_method: str, dither_strength: float, rotate_deg: int,
-                   enhance: bool, contrast: float, color: float, brightness: float, sharpness: float, gamma: float):
+                   mirror_horizontal: bool, enhance: bool, contrast: float, color: float,
+                   brightness: float, sharpness: float, gamma: float):
     img = Image.open(path).convert("RGB")
     if rotate_deg:
         img = img.rotate(rotate_deg, expand=True)
+    if mirror_horizontal:
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
     img = _fit_center_crop(img, W, H)
     if enhance:
         img = _enhance_for_spectra6(img, contrast, color, brightness, sharpness, gamma)
@@ -394,7 +397,8 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     def __init__(self, addr, handler, images_dir, base_url, version, interval_sec, heartbeat_interval_sec,
-                 dither_method, dither_strength, rotate_deg, enhance, contrast, color, brightness, sharpness, gamma,
+                 dither_method, dither_strength, rotate_deg, mirror_horizontal, enhance,
+                 contrast, color, brightness, sharpness, gamma,
                  debug_preview_dir, scan_interval_sec, smb_direct, smb_share, smb_user, smb_pass, smb_domain,
                  smb_guest, smb_dir, reset_index, page_size, page_index):
         super().__init__(addr, handler)
@@ -408,6 +412,7 @@ class Server(ThreadingHTTPServer):
         self.dither_method = dither_method
         self.dither_strength = dither_strength
         self.rotate_deg = rotate_deg
+        self.mirror_horizontal = mirror_horizontal
         self.enhance = enhance
         self.contrast = contrast
         self.color = color
@@ -706,11 +711,11 @@ class Server(ThreadingHTTPServer):
                     else:
                         raise
                 mtime = attr.last_write_time
-            key = (name, mtime, self.dither_method, self.dither_strength, self.rotate_deg,
+            key = (name, mtime, self.dither_method, self.dither_strength, self.rotate_deg, self.mirror_horizontal,
                    self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma, "smb")
         else:
             mtime = os.path.getmtime(path)
-            key = (path, mtime, self.dither_method, self.dither_strength, self.rotate_deg,
+            key = (path, mtime, self.dither_method, self.dither_strength, self.rotate_deg, self.mirror_horizontal,
                    self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma)
         cached = self._cache.get(key)
         if cached:
@@ -754,6 +759,8 @@ class Server(ThreadingHTTPServer):
             img = Image.open(buf).convert("RGB")
             if self.rotate_deg:
                 img = img.rotate(self.rotate_deg, expand=True)
+            if self.mirror_horizontal:
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
             img = _fit_center_crop(img, W, H)
             if self.enhance:
                 img = _enhance_for_spectra6(img, self.contrast, self.color, self.brightness, self.sharpness, self.gamma)
@@ -767,6 +774,7 @@ class Server(ThreadingHTTPServer):
             data = pack_indices(idx8)
         else:
             data = jpeg_to_packed(path, self.dither_method, self.dither_strength, self.rotate_deg,
+                                  self.mirror_horizontal,
                                   self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma)
         self._write_debug_preview(path, data)
         self._cache[key] = data
@@ -778,11 +786,11 @@ class Server(ThreadingHTTPServer):
             mtime = self._smb_mtime.get(name)
             if mtime is None:
                 return None
-            key = (name, mtime, self.dither_method, self.dither_strength, self.rotate_deg,
+            key = (name, mtime, self.dither_method, self.dither_strength, self.rotate_deg, self.mirror_horizontal,
                    self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma, "smb")
             return self._cache.get(key)
         mtime = os.path.getmtime(path)
-        key = (path, mtime, self.dither_method, self.dither_strength, self.rotate_deg,
+        key = (path, mtime, self.dither_method, self.dither_strength, self.rotate_deg, self.mirror_horizontal,
                self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma)
         return self._cache.get(key)
 
@@ -804,6 +812,8 @@ def main():
     parser.add_argument("--dither-strength", type=float, default=1.0)
     parser.add_argument("--rotate-deg", type=int, default=0,
                         help="rotate input images by N degrees (e.g. 90, 180, 270)")
+    parser.add_argument("--mirror-horizontal", action="store_true",
+                        help="mirror input images horizontally")
     parser.add_argument("--enhance", action="store_true",
                         help="apply Spectra 6 preprocessing (contrast/gamma/color/etc)")
     parser.add_argument("--enhance-contrast", type=float, default=1.15)
@@ -882,7 +892,7 @@ def main():
 
     httpd = Server((args.host, args.port), Handler,
                    args.images_dir, args.base_url, args.version, args.interval_sec, args.heartbeat_interval_sec,
-                   args.dither, args.dither_strength, args.rotate_deg,
+                   args.dither, args.dither_strength, args.rotate_deg, args.mirror_horizontal,
                    args.enhance, args.enhance_contrast, args.enhance_color, args.enhance_brightness,
                    args.enhance_sharpness, args.enhance_gamma, args.debug_preview_dir,
                    args.scan_interval_sec, args.smb_direct, args.smb_share, args.smb_user,
