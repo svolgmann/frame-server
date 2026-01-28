@@ -340,6 +340,10 @@ class Handler(BaseHTTPRequestHandler):
                     "image_count",
                     "current_index",
                     "next_index",
+                    "page",
+                    "page_size",
+                    "total_images",
+                    "total_pages",
                     "current_url",
                     "next_url",
                 ]
@@ -347,6 +351,8 @@ class Handler(BaseHTTPRequestHandler):
                 print("[debug] heartbeat payload: " + ", ".join(parts))
                 current_index = payload.get("current_index")
                 next_index = payload.get("next_index")
+                page = payload.get("page")
+                page_size = payload.get("page_size")
                 current_url = payload.get("current_url")
                 next_url = payload.get("next_url")
                 if current_index is not None or next_index is not None or current_url or next_url:
@@ -354,6 +360,8 @@ class Handler(BaseHTTPRequestHandler):
                         self.server.precompute_by_indices(
                             current_index,
                             next_index,
+                            page=page,
+                            page_size=page_size,
                             current_url=current_url,
                             next_url=next_url,
                         )
@@ -562,7 +570,7 @@ class Server(HTTPServer):
         keep = [n for n in [current_name, next_name] if n]
         self._prune_cache_keep(keep)
 
-    def precompute_by_indices(self, current_index, next_index, current_url=None, next_url=None):
+    def precompute_by_indices(self, current_index, next_index, page=None, page_size=None, current_url=None, next_url=None):
         images = self._refresh_image_list()
         if not images:
             print("[debug] no images to precompute")
@@ -570,6 +578,11 @@ class Server(HTTPServer):
             return
         current_name = None
         next_name = None
+        if isinstance(page, int) and isinstance(page_size, int) and page_size > 0:
+            if isinstance(current_index, int):
+                current_index = (page * page_size) + current_index
+            if isinstance(next_index, int):
+                next_index = (page * page_size) + next_index
         if isinstance(current_url, str) and current_url:
             current_name = os.path.basename(urlparse(current_url).path)
         if isinstance(next_url, str) and next_url:
