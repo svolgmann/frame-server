@@ -272,6 +272,7 @@ class Handler(BaseHTTPRequestHandler):
                     "total_images": total_images,
                     "total_pages": total_pages,
                 },
+                "precompute_ready_image": self.server._precompute_ready,
                 "images": [{"url": f"{self.server.base_url}/images/{n}"} for n in paged_images],
             }
             body = json.dumps(payload).encode("utf-8")
@@ -293,7 +294,16 @@ class Handler(BaseHTTPRequestHandler):
                 is_found = os.path.isfile(fs_path)
             if is_found:
                 print(f"[debug] preparing image payload for {name}")
-                data = self.server.get_packed(name if self.server.smb_direct else fs_path)
+                cached = self.server.get_cached_packed(name if self.server.smb_direct else fs_path)
+                if cached is None:
+                    self.server._precompute_async(name)
+                    self.send_response(503)
+                    self.send_header("Retry-After", "5")
+                    self.end_headers()
+                    elapsed_ms = (time.time() - start_time) * 1000.0
+                    print(f"[debug] cache miss for {name}; returning 503 in {elapsed_ms:.1f} ms")
+                    return
+                data = cached
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
                 self.send_header("Content-Length", str(len(data)))
@@ -425,6 +435,8 @@ class Server(HTTPServer):
         self._precompute_executor = ThreadPoolExecutor(max_workers=1)
         self._precompute_lock = threading.Lock()
         self._precompute_inflight = set()
+        self._precompute_current = None
+        self._precompute_ready = None
         self._smb_conn = None
         self._smb_server = None
         self._smb_share_name = None
@@ -606,6 +618,7 @@ class Server(HTTPServer):
             if name in self._precompute_inflight:
                 return
             self._precompute_inflight.add(name)
+            self._precompute_current = name
         print(f"[debug] precomputing next image: {name}")
 
         def _run():
@@ -617,6 +630,9 @@ class Server(HTTPServer):
             finally:
                 with self._precompute_lock:
                     self._precompute_inflight.discard(name)
+                    if self._precompute_current == name:
+                        self._precompute_current = None
+                    self._precompute_ready = name
 
         self._precompute_executor.submit(_run)
 
@@ -745,6 +761,20 @@ class Server(HTTPServer):
         self._write_debug_preview(path, data)
         self._cache[key] = data
         return data
+
+    def get_cached_packed(self, path):
+        if self.smb_direct:
+            name = path
+            mtime = self._smb_mtime.get(name)
+            if mtime is None:
+                return None
+            key = (name, mtime, self.dither_method, self.dither_strength, self.rotate_deg,
+                   self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma, "smb")
+            return self._cache.get(key)
+        mtime = os.path.getmtime(path)
+        key = (path, mtime, self.dither_method, self.dither_strength, self.rotate_deg,
+               self.enhance, self.contrast, self.color, self.brightness, self.sharpness, self.gamma)
+        return self._cache.get(key)
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
