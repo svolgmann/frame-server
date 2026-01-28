@@ -347,9 +347,16 @@ class Handler(BaseHTTPRequestHandler):
                 print("[debug] heartbeat payload: " + ", ".join(parts))
                 current_index = payload.get("current_index")
                 next_index = payload.get("next_index")
-                if current_index is not None or next_index is not None:
+                current_url = payload.get("current_url")
+                next_url = payload.get("next_url")
+                if current_index is not None or next_index is not None or current_url or next_url:
                     try:
-                        self.server.precompute_by_indices(current_index, next_index)
+                        self.server.precompute_by_indices(
+                            current_index,
+                            next_index,
+                            current_url=current_url,
+                            next_url=next_url,
+                        )
                     except Exception as exc:
                         print(f"[debug] heartbeat precompute failed: {exc}")
             self.send_response(200)
@@ -555,7 +562,7 @@ class Server(HTTPServer):
         keep = [n for n in [current_name, next_name] if n]
         self._prune_cache_keep(keep)
 
-    def precompute_by_indices(self, current_index, next_index):
+    def precompute_by_indices(self, current_index, next_index, current_url=None, next_url=None):
         images = self._refresh_image_list()
         if not images:
             print("[debug] no images to precompute")
@@ -563,6 +570,10 @@ class Server(HTTPServer):
             return
         current_name = None
         next_name = None
+        if isinstance(current_url, str) and current_url:
+            current_name = os.path.basename(urlparse(current_url).path)
+        if isinstance(next_url, str) and next_url:
+            next_name = os.path.basename(urlparse(next_url).path)
         if isinstance(current_index, int) and 0 <= current_index < len(images):
             current_name = images[current_index]
         if isinstance(next_index, int) and 0 <= next_index < len(images):
