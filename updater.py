@@ -9,7 +9,7 @@ import subprocess
 import platform
 import io
 import socket
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from PIL import Image
@@ -392,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
         elapsed_ms = (time.time() - start_time) * 1000.0
         print(f"[debug] 404 for {parsed.path} after {elapsed_ms:.1f} ms")
 
-class Server(HTTPServer):
+class Server(ThreadingHTTPServer):
     def __init__(self, addr, handler, images_dir, base_url, version, interval_sec, heartbeat_interval_sec,
                  dither_method, dither_strength, rotate_deg, enhance, contrast, color, brightness, sharpness, gamma,
                  debug_preview_dir, scan_interval_sec, smb_direct, smb_share, smb_user, smb_pass, smb_domain,
@@ -430,6 +430,9 @@ class Server(HTTPServer):
         self._cache = {}
         self._last_requested = None
         self._image_list = []
+        self._image_list_cache = None
+        self._image_list_cache_at = 0.0
+        self.list_cache_ttl_sec = 30
         self.last_heartbeat = None
         self.last_heartbeat_at = None
         self._precompute_executor = ThreadPoolExecutor(max_workers=1)
@@ -527,9 +530,16 @@ class Server(HTTPServer):
         return out
 
     def list_images(self):
+        now = time.time()
+        if self._image_list_cache and (now - self._image_list_cache_at) < self.list_cache_ttl_sec:
+            return self._image_list_cache
         if self.smb_direct:
-            return self._smb_list_images()
-        return list_images(self.images_dir)
+            images = self._smb_list_images()
+        else:
+            images = list_images(self.images_dir)
+        self._image_list_cache = images
+        self._image_list_cache_at = now
+        return images
 
     def _refresh_image_list(self):
         self._image_list = self.list_images()
