@@ -32,6 +32,7 @@ python3 updater.py \
 
 - `--dither` / `--dither-strength`: Dithering einstellen (`none` oder `floyd`).
 - `--rotate-deg`: Rotation vor dem Resizing (z.B. `90`, `180`).
+- `--mirror-horizontal`: Bild horizontal spiegeln.
 - `--enhance` + `--enhance-*`: Vorverarbeitung fuer Spectra-6 (Kontrast/Gamma/etc).
 - `--scan-interval-sec`: Hintergrund-Scan fuer das Vorrechnen (0 = aus).
 - `--reset-index`: setzt in der ersten `version.json` einmalig `reset_index=true`.
@@ -47,6 +48,7 @@ python3 updater.py \
   --version 2 \
   --interval-sec 15 \
   --rotate-deg 90 \
+  --mirror-horizontal \
   --enhance \
   --enhance-contrast 1.2 \
   --enhance-color 1.1 \
