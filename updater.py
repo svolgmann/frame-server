@@ -4,6 +4,7 @@ import json
 import os
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import platform
 import io
@@ -421,6 +422,9 @@ class Server(HTTPServer):
         self._image_list = []
         self.last_heartbeat = None
         self.last_heartbeat_at = None
+        self._precompute_executor = ThreadPoolExecutor(max_workers=1)
+        self._precompute_lock = threading.Lock()
+        self._precompute_inflight = set()
         self._smb_conn = None
         self._smb_server = None
         self._smb_share_name = None
@@ -562,11 +566,7 @@ class Server(HTTPServer):
         next_name = self._next_image_name(current_name)
         if not next_name:
             return
-        print(f"[debug] precomputing next image: {next_name}")
-        try:
-            self.get_packed(next_name if self.smb_direct else os.path.join(self.images_dir, next_name))
-        except Exception as exc:
-            print(f"[debug] failed to precompute {next_name}: {exc}")
+        self._precompute_async(next_name)
         keep = [n for n in [current_name, next_name] if n]
         self._prune_cache_keep(keep)
 
@@ -595,15 +595,30 @@ class Server(HTTPServer):
             next_name = self._next_image_name(current_name)
         if not next_name:
             return
-        print(f"[debug] precomputing next image: {next_name}")
-        try:
-            self.get_packed(next_name if self.smb_direct else os.path.join(self.images_dir, next_name))
-        except Exception as exc:
-            print(f"[debug] failed to precompute {next_name}: {exc}")
+        self._precompute_async(next_name)
         keep = [n for n in [current_name, next_name] if n]
         self._prune_cache_keep(keep)
         if current_name:
             self._last_requested = current_name
+
+    def _precompute_async(self, name):
+        with self._precompute_lock:
+            if name in self._precompute_inflight:
+                return
+            self._precompute_inflight.add(name)
+        print(f"[debug] precomputing next image: {name}")
+
+        def _run():
+            try:
+                path = name if self.smb_direct else os.path.join(self.images_dir, name)
+                self.get_packed(path)
+            except Exception as exc:
+                print(f"[debug] failed to precompute {name}: {exc}")
+            finally:
+                with self._precompute_lock:
+                    self._precompute_inflight.discard(name)
+
+        self._precompute_executor.submit(_run)
 
     def start_image_watcher(self):
         if self.scan_interval_sec <= 0:
